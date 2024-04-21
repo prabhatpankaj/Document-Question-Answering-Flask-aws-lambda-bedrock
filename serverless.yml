@@ -1,0 +1,24 @@
+service: document-qa
+
+frameworkVersion: '3'
+useDotenv: true
+
+provider:
+  name: aws
+  runtime: python3.11
+  region: ${opt:region, 'ap-south-1'}
+  stage: ${opt:stage, 'development'}
+  logRetentionInDays: 1
+plugins:
+ - serverless-wsgi
+ - serverless-python-requirements
+custom:
+ wsgi:
+   app: app.app
+   packRequirements: false
+functions:
+ app:
+   handler: wsgi_handler.handler
+   events:
+     - http: ANY /
+     - http: 'ANY {proxy+}'
