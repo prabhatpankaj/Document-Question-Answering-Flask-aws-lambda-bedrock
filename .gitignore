@@ -43,3 +43,7 @@ lerna-debug.log*
 /dbdata*
 /elastic-data
 /redis_data*
+
+__pycache__
+
+.serverless
