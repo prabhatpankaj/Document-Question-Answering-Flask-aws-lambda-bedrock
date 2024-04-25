@@ -81,8 +81,8 @@ def bedrock_runtime_stream(prompt):
 @app.route('/docqna', methods=["POST"])
 def processclaim():
     try:
-        header_key = request.headers.get('X-API-Key')
-        if header_key == os.environ.get('X-API-Key'):
+        header_key = request.headers.get('api_key')
+        if header_key == os.environ.get('api_key'):
             input_json = request.get_json(force=True)
             pdf_url = input_json["pdf_url"]
             pdfcontents = download_pdf_from_url(pdf_url)
@@ -91,7 +91,7 @@ def processclaim():
             response = json.loads("{"+ extracted_values[0] + "}")
             return response
         else:
-            return jsonify({"Status": "Failure --- invalid X-API-key"})
+            return jsonify({"Status": "Failure --- invalid api_key"})
     except Exception as e:
         print(f"Error processing request: {e}")
         return jsonify({"Status": "Failure --- some error occurred"})
