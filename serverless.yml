@@ -9,6 +9,7 @@ provider:
   region: ${opt:region, 'us-west-2'}
   stage: ${opt:stage, 'development'}
   logRetentionInDays: 1
+  timeout: 30
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -24,6 +25,7 @@ custom:
 functions:
  app:
    handler: wsgi_handler.handler
+   timeout: 20
    events:
      - http: ANY /
      - http: 'ANY {proxy+}'
