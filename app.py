@@ -4,6 +4,7 @@ from langchain.prompts import PromptTemplate
 from flask import Flask, request, jsonify
 import json
 import re
+import os
 
 app = Flask(__name__)
 
@@ -80,13 +81,17 @@ def bedrock_runtime_stream(prompt):
 @app.route('/docqna', methods=["POST"])
 def processclaim():
     try:
-        input_json = request.get_json(force=True)
-        pdf_url = input_json["pdf_url"]
-        pdfcontents = download_pdf_from_url(pdf_url)
-        prompt = extract_insurance_info(pdfcontents)
-        extracted_values = bedrock_runtime_stream(prompt)
-        response = json.loads("{"+ extracted_values[0] + "}")
-        return response
+        header_key = request.headers.get('X-API-Key')
+        if header_key == os.environ.get('X-API-Key'):
+            input_json = request.get_json(force=True)
+            pdf_url = input_json["pdf_url"]
+            pdfcontents = download_pdf_from_url(pdf_url)
+            prompt = extract_insurance_info(pdfcontents)
+            extracted_values = bedrock_runtime_stream(prompt)
+            response = json.loads("{"+ extracted_values[0] + "}")
+            return response
+        else:
+            return jsonify({"Status": "Failure --- invalid X-API-key"})
     except Exception as e:
         print(f"Error processing request: {e}")
         return jsonify({"Status": "Failure --- some error occurred"})

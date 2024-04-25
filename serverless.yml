@@ -1,4 +1,5 @@
 service: document-qa
+
 frameworkVersion: '3'
 useDotenv: true
 
@@ -8,30 +9,22 @@ provider:
   region: ${opt:region, 'us-west-2'}
   stage: ${opt:stage, 'development'}
   logRetentionInDays: 1
-  apiKeys:
-    - myApiKey: ${env:API_KEY_VALUE}
   iamRoleStatements:
     - Effect: Allow
       Action:
         - bedrock:*
       Resource: "*"
 plugins:
-  - serverless-wsgi
-  - serverless-python-requirements
+ - serverless-wsgi
+ - serverless-python-requirements
 custom:
-  wsgi:
-    app: app.app
-    packRequirements: false
+ wsgi:
+   app: app.app
+   packRequirements: false
 functions:
-  app:
-    handler: wsgi_handler.handler
-    timeout: 30
-    events:
-      - http:
-          path: /
-          method: ANY
-          private: true
-      - http:
-          path: /{proxy+}
-          method: ANY
-          private: true
+ app:
+   handler: wsgi_handler.handler
+   timeout: 30
+   events:
+     - http: ANY /
+     - http: 'ANY {proxy+}'
