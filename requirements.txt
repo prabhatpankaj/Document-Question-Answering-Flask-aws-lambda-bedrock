@@ -9,6 +9,7 @@ certifi==2024.2.2
 charset-normalizer==3.3.2
 click==8.1.7
 dataclasses-json==0.6.4
+faiss-cpu==1.8.0
 Flask==3.0.3
 frozenlist==1.4.1
 idna==3.7
@@ -31,6 +32,7 @@ orjson==3.10.1
 packaging==23.2
 pydantic==2.7.0
 pydantic_core==2.18.1
+pypdf==4.2.0
 python-dateutil==2.9.0.post0
 PyYAML==6.0.1
 requests==2.31.0

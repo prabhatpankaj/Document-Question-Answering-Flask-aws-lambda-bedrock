@@ -1,17 +1,9 @@
-import os
-import tempfile
-import requests
 import boto3
 from langchain_community.document_loaders import PyPDFLoader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_community.embeddings import BedrockEmbeddings
-from langchain.llms.bedrock import Bedrock
-from langchain.indexes import VectorstoreIndexCreator
-from langchain.output_parsers import RegexParser
 from langchain.prompts import PromptTemplate
-from langchain.chains.question_answering import load_qa_chain
 from flask import Flask, request, jsonify
+import json
+import re
 
 app = Flask(__name__)
 
@@ -20,114 +12,81 @@ bedrock_runtime = boto3.client(
     region_name="us-west-2",
 )
 
-embeddings = BedrockEmbeddings(
-    model_id="amazon.titan-embed-text-v1",
-    client=bedrock_runtime,
-    region_name="us-west-2",
-)
-
-llm = Bedrock(model_id="amazon.titan-text-express-v1", client=bedrock_runtime, region_name="us-west-2")
 
 # Function to download PDF from URL
 def download_pdf_from_url(pdf_url):
     try:
-        response = requests.get(pdf_url)
-        response.raise_for_status()  # Raise error for invalid response
-        return response.content
+        loader = PyPDFLoader(pdf_url)
+        pdf_contents = loader.load()
+        return pdf_contents
     except Exception as e:
         print(f"Error downloading PDF from URL: {e}")
         return None
 
-def load_pdf_and_texts(pdf_content):
-    try:
-        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
-            temp_file.write(pdf_content)
-            temp_file_path = temp_file.name
-
-        loader = PyPDFLoader(temp_file_path)
-        documents = loader.load()
-        chunk_size_value = 1000
-        chunk_overlap = 100
-        text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size_value, chunk_overlap=chunk_overlap, length_function=len)
-        return text_splitter.split_documents(documents)
-    except Exception as e:
-        print(f"Error loading PDF: {e}")
-        return None
-
-def initialize_docembeddings(pdf_content):
-    texts = load_pdf_and_texts(pdf_content)
-    if texts:
-        index_creator = VectorstoreIndexCreator(
-            vectorstore_cls=FAISS,
-            embedding=embeddings,
-        )
-        index_from_documents = index_creator.from_documents(texts)
-        return index_from_documents.vectorstore
-    return None
-
-def get_docembeddings(pdf_url):
-    pdf_content = download_pdf_from_url(pdf_url)
-    if pdf_content:
-        tmp_index_file = f'/tmp/{pdf_url.replace("/", "_").replace(":", "_")}.faiss'
-        if not os.path.exists(tmp_index_file):
-            docembeddings = initialize_docembeddings(pdf_content)
-            if docembeddings:
-                docembeddings.save_local(tmp_index_file)
-        else:
-            docembeddings = FAISS.load_local(tmp_index_file, embeddings, allow_dangerous_deserialization=True)
-        return docembeddings
-    else:
-        return None
-
-prompt_template = """Use the following pieces of context to answer the question at the end. If you don't know the answer, just say that you don't know, don't try to make up an answer.
-
-This should be in the following format:
-
-Question: [question here]
-Helpful Answer: [answer here]
-Score: [score between 0 and 100]
-
-Begin!
-
-Context:
----------
-{context}
----------
-Question: {questions}
-Helpful Answer:"""
-
-output_parser = RegexParser(
-    regex=r"(.*?)\nScore: (.*)",
-    output_keys=["answer", "score"],
-)
-
-PROMPT = PromptTemplate(
-    template=prompt_template,
-    input_variables=["context", "questions"],
-    output_parser=output_parser
-)
-# Load QA chain
-chain = load_qa_chain(llm, chain_type="map_rerank", return_intermediate_steps=True, prompt=PROMPT)
-
+def extract_insurance_info(pdfcontents):
+    prompt = """Extract below entities from below text, and produce output in specified format.
+        Example: For text like this "Insured Name: John Doe
+        Registration Number: ABC123
+        Make/Model: Toyota Camry
+        Period of Insurance: 01/01/2024 - 01/01/2025
+        Engine Number: 1234567890
+        Chassis No: ABC123456DEF789
+        Policy Number: XYZ789"
+        Extract the following entities:
+        Entities: ```{Entities}```
+        Format:```{format}```
+        text:```{pdfcontents}```
+        """
+    format = "dict"
+    Entities = """
+        {
+        "Insured Name": value,
+        "Registration Number": value,
+        "Make/Model": value,
+        "Period of Insurance": value,
+        "Engine Number": value,
+        "Chassis No": value,
+        "Policy Number": value
+        }
+        """
+    entity_template = PromptTemplate(input_variables=["Entities", "format", "pdfcontents"], template=prompt)
+    entity_ext = entity_template.format(pdfcontents=pdfcontents, Entities=Entities, format=format)
     
+    return entity_ext
+
+def bedrock_runtime_stream(prompt):
+    final_prompt = f"\n\nHuman: {prompt}\n\nAssistant:"
+
+    parameters = {
+        "prompt": final_prompt,
+        "max_tokens_to_sample": 600,
+        "temperature": 0,
+        "top_k": 10
+    }
+
+    invoke_model_kwargs = {
+        "body": json.dumps(parameters),
+        "accept": '*/*',
+        "contentType": 'application/json',
+        "modelId": 'anthropic.claude-v2'
+    }
+
+    res = bedrock_runtime.invoke_model(**invoke_model_kwargs)
+    res_body = json.loads(res.get('body').read())
+    query = res_body['completion'].replace("python", "").strip()
+    extracted_values = re.findall(r'\{([^}]*)\}', query)
+    return extracted_values
+
 @app.route('/docqna', methods=["POST"])
 def processclaim():
     try:
         input_json = request.get_json(force=True)
         pdf_url = input_json["pdf_url"]
-        queries = input_json["queries"]
-        combined_query = " ".join(queries)  # Combine queries into a single string
-        docembeddings = get_docembeddings(pdf_url)
-        if docembeddings:
-            relevant_chunks = docembeddings.similarity_search_with_score(combined_query, k=2)
-            chunk_docs = [chunk[0] for chunk in relevant_chunks]
-            results = chain({"input_documents": chunk_docs, "questions": combined_query})
-            return jsonify(results["output_text"])
-        else:
-            return jsonify({"Status": "Failure --- Unable to load document embeddings"})
+        pdfcontents = download_pdf_from_url(pdf_url)
+        prompt = extract_insurance_info(pdfcontents)
+        extracted_values = bedrock_runtime_stream(prompt)
+        response = json.loads("{"+ extracted_values[0] + "}")
+        return response
     except Exception as e:
         print(f"Error processing request: {e}")
         return jsonify({"Status": "Failure --- some error occurred"})
-
-if __name__ == "__main__":
-    app.run(debug=True)
