@@ -9,6 +9,11 @@ provider:
   region: ${opt:region, 'us-west-2'}
   stage: ${opt:stage, 'development'}
   logRetentionInDays: 1
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - bedrock:*
+      Resource: "*"
 plugins:
  - serverless-wsgi
  - serverless-python-requirements
