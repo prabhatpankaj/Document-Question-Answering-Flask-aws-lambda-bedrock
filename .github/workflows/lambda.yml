@@ -32,3 +32,5 @@ jobs:
         run: npm install
       - name: Deploy
         run: sls deploy --stage development --verbose
+        env:
+          API_KEY_VALUE: ${{ secrets.API_KEY_VALUE }}
